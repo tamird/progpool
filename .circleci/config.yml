@@ -1,0 +1,13 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: jmgao/ubuntu-focal-mingw-w64-rust:20200525
+    steps:
+      - checkout
+      - run:
+          name: Build
+          command: cargo +stable build
+      - run:
+          name: Test
+          command: cargo +stable test

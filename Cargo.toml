@@ -1,0 +1,17 @@
+[package]
+name = "progpool"
+version = "0.1.0"
+authors = ["Josh Gao <josh@jmgao.dev>"]
+edition = "2018"
+description = "Job pool with terminal progress bar"
+readme = "README.md"
+repository = "https://github.com/jmgao/progpool"
+license = "Apache-2.0"
+
+[dependencies]
+futures = { version = "0.3", features = ["thread-pool"] }
+failure = "0.1"
+indicatif = "0.14"
+
+tracing_facade = "0.1"
+tracing_chromium = "0.1"

@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use failure::Error;
 use futures::future;
 use futures::task::SpawnExt;
 
@@ -75,9 +74,9 @@ pub struct ExecutionResult<T> {
   pub result: T,
 }
 
-pub struct ExecutionResults<T> {
+pub struct ExecutionResults<T, E> {
   pub successful: Vec<ExecutionResult<T>>,
-  pub failed: Vec<ExecutionResult<Error>>,
+  pub failed: Vec<ExecutionResult<E>>,
 }
 
 impl Pool {
@@ -109,7 +108,7 @@ impl Pool {
     }
   }
 
-  pub fn execute<T: Send + 'static>(&mut self, mut job: Job<T>) -> ExecutionResults<T> {
+  pub fn execute<T: Send + 'static, E: Send + 'static>(&mut self, mut job: Job<T, E>) -> ExecutionResults<T, E> {
     let task_count = job.tasks.len();
     let pb = Arc::new(indicatif::ProgressBar::new(task_count as u64));
     pb.set_style(progress_bar_style(task_count));
@@ -163,20 +162,20 @@ impl Pool {
   }
 }
 
-pub struct Job<T: Send> {
+pub struct Job<T: Send, E: Send> {
   name: String,
-  tasks: Vec<Task<T>>,
+  tasks: Vec<Task<T, E>>,
 }
 
-impl<T: Send> Job<T> {
-  pub fn with_name<N: Into<String>>(name: N) -> Job<T> {
+impl<T: Send, E: Send> Job<T, E> {
+  pub fn with_name<N: Into<String>>(name: N) -> Job<T, E> {
     Job {
       name: name.into(),
       tasks: Vec::new(),
     }
   }
 
-  pub fn add_task<N: Into<String>, F: FnOnce(&futures::task::Context) -> Result<T, Error> + Send + 'static>(
+  pub fn add_task<N: Into<String>, F: FnOnce(&futures::task::Context) -> Result<T, E> + Send + 'static>(
     &mut self,
     name: N,
     task: F,
@@ -189,15 +188,13 @@ impl<T: Send> Job<T> {
   }
 }
 
-struct Task<T: Send> {
+struct Task<T: Send, E: Send> {
   name: String,
-  task: Box<dyn FnOnce(&futures::task::Context) -> Result<T, Error> + Send>,
+  task: Box<dyn FnOnce(&futures::task::Context) -> Result<T, E> + Send>,
 }
 
 #[cfg(test)]
 mod tests {
-  use failure::format_err;
-
   #[test]
   fn smoke() {
     use super::*;
@@ -221,7 +218,7 @@ mod tests {
 
     job.add_task("third", move |_| {
       let data = recv_3.recv().unwrap();
-      Err(format_err!("{}", data + 1))
+      Err(format!("{}", data + 1))
     });
 
     send_1.send(0).unwrap();

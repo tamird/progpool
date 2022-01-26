@@ -1,6 +1,6 @@
 [package]
 name = "progpool"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Josh Gao <josh@jmgao.dev>"]
 edition = "2018"
 description = "Job pool with terminal progress bar"
@@ -10,7 +10,7 @@ license = "Apache-2.0"
 
 [dependencies]
 futures = { version = "0.3", features = ["thread-pool"] }
-indicatif = "0.14"
+indicatif = "0.16.2"
 
 tracing_facade = "0.1"
 tracing_chromium = "0.1"

@@ -54,7 +54,7 @@ impl TaskMonitor {
   fn update_progress_bar(&mut self) {
     match self.tasks.iter().next() {
       Some(task) => {
-        self.progress_bar.set_message(&(task.0).1);
+        self.progress_bar.set_message((task.0).1.clone());
       }
 
       None => {
@@ -112,7 +112,7 @@ impl Pool {
     let task_count = job.tasks.len();
     let pb = Arc::new(indicatif::ProgressBar::new(task_count as u64));
     pb.set_style(progress_bar_style(task_count));
-    pb.set_prefix(&job.name);
+    pb.set_prefix(job.name.clone());
     pb.enable_steady_tick(1000);
 
     trace_scoped!(format!("Pool::execute({})", job.name));

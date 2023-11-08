@@ -1,6 +1,6 @@
 [package]
 name = "progpool"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Josh Gao <josh@jmgao.dev>"]
 edition = "2018"
 description = "Job pool with terminal progress bar"

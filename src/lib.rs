@@ -67,6 +67,7 @@ impl TaskMonitor {
 pub struct Pool {
   thread_count: Option<usize>,
   thread_pool: Option<futures::executor::ThreadPool>,
+  quiet: bool,
 }
 
 pub struct ExecutionResult<T> {
@@ -84,6 +85,7 @@ impl Pool {
     Pool {
       thread_count: None,
       thread_pool: None,
+      quiet: false,
     }
   }
 
@@ -91,7 +93,12 @@ impl Pool {
     Pool {
       thread_count: Some(thread_count),
       thread_pool: None,
+      quiet: false,
     }
+  }
+
+  pub fn quiet(&mut self, quiet: bool) {
+    self.quiet = quiet;
   }
 
   fn thread_pool(&mut self) -> &mut futures::executor::ThreadPool {
@@ -110,7 +117,13 @@ impl Pool {
 
   pub fn execute<T: Send + 'static, E: Send + 'static>(&mut self, mut job: Job<T, E>) -> ExecutionResults<T, E> {
     let task_count = job.tasks.len();
-    let pb = Arc::new(indicatif::ProgressBar::new(task_count as u64));
+    let pb = Arc::new(
+      if self.quiet {
+        indicatif::ProgressBar::hidden()
+      } else {
+        indicatif::ProgressBar::new(task_count as u64)
+      }
+    );
     pb.set_style(progress_bar_style(task_count));
     pb.set_prefix(job.name.clone());
     pb.enable_steady_tick(1000);

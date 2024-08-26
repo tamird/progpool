@@ -100,22 +100,18 @@ impl Pool {
     }
 
     fn thread_pool(&mut self) -> &mut rayon::ThreadPool {
-        if self.thread_pool.is_some() {
-            self.thread_pool.as_mut().unwrap()
-        } else {
+        let thread_count = self.thread_count;
+        self.thread_pool.get_or_insert_with(|| {
             let builder = rayon::ThreadPoolBuilder::new();
-            let builder = match self.thread_count {
+            let builder = match thread_count {
                 Some(count) => builder.num_threads(count),
                 None => builder,
             };
 
-            self.thread_pool = Some(
-                builder
-                    .build()
-                    .unwrap_or_else(|err| panic!("failed to create job pool: {}", err)),
-            );
-            self.thread_pool.as_mut().unwrap()
-        }
+            builder
+                .build()
+                .unwrap_or_else(|err| panic!("failed to create job pool: {}", err))
+        })
     }
 
     pub fn execute<T: Send, E: Send>(&mut self, mut job: Job<T, E>) -> ExecutionResults<T, E> {

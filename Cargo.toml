@@ -12,5 +12,4 @@ license = "Apache-2.0"
 futures = { version = "0.3", features = ["thread-pool"] }
 indicatif = "0.16.2"
 
-tracing_facade = "0.1"
-tracing_chromium = "0.1"
+tracing = "^0.1.40"

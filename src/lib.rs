@@ -6,8 +6,6 @@ use std::time::Instant;
 use futures::future;
 use futures::task::SpawnExt;
 
-use tracing_facade::trace_scoped;
-
 fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
     let task_count_digits = task_count.to_string().len();
     let count = "{pos:>".to_owned() + &(8 - task_count_digits).to_string() + "}/{len}";
@@ -133,49 +131,52 @@ impl Pool {
         pb.set_prefix(job.name.clone());
         pb.enable_steady_tick(1000);
 
-        trace_scoped!(format!("Pool::execute({})", job.name));
+        tracing::span!(tracing::Level::INFO, "Pool::execute", name = job.name).in_scope(|| {
+            let task_monitor = Arc::new(Mutex::new(TaskMonitor::new(Arc::clone(&pb))));
+            let handles: Vec<_> = job
+                .tasks
+                .drain(..)
+                .map(|task| {
+                    let task_monitor = Arc::clone(&task_monitor);
+                    self.thread_pool()
+                        .spawn_with_handle(future::lazy(move |context| {
+                            tracing::span!(tracing::Level::INFO, "Task::task", name = task.name)
+                                .in_scope(|| {
+                                    let task_id =
+                                        task_monitor.lock().unwrap().started(task.name.clone());
+                                    let result = (task.task)(context);
+                                    task_monitor.lock().unwrap().finished(task_id);
+                                    (task.name, result)
+                                })
+                        }))
+                        .expect("failed to spawn job")
+                })
+                .collect();
 
-        let task_monitor = Arc::new(Mutex::new(TaskMonitor::new(Arc::clone(&pb))));
-        let handles: Vec<_> = job
-            .tasks
-            .drain(..)
-            .map(|task| {
-                let task_monitor = Arc::clone(&task_monitor);
-                self.thread_pool()
-                    .spawn_with_handle(future::lazy(move |context| {
-                        trace_scoped!(task.name.clone());
-                        let task_id = task_monitor.lock().unwrap().started(task.name.clone());
-                        let result = (task.task)(context);
-                        task_monitor.lock().unwrap().finished(task_id);
-                        (task.name, result)
-                    }))
-                    .expect("failed to spawn job")
-            })
-            .collect();
+            let handles = futures::executor::block_on(future::join_all(handles));
+            pb.finish();
 
-        let handles = futures::executor::block_on(future::join_all(handles));
-        pb.finish();
+            let mut successful = Vec::new();
+            let mut failed = Vec::new();
 
-        let mut successful = Vec::new();
-        let mut failed = Vec::new();
+            for (task_name, result) in handles {
+                match result {
+                    Ok(result) => {
+                        successful.push(ExecutionResult {
+                            name: task_name,
+                            result,
+                        });
+                    }
 
-        for (task_name, result) in handles {
-            match result {
-                Ok(result) => {
-                    successful.push(ExecutionResult {
+                    Err(err) => failed.push(ExecutionResult {
                         name: task_name,
-                        result,
-                    });
+                        result: err,
+                    }),
                 }
-
-                Err(err) => failed.push(ExecutionResult {
-                    name: task_name,
-                    result: err,
-                }),
             }
-        }
 
-        ExecutionResults { successful, failed }
+            ExecutionResults { successful, failed }
+        })
     }
 }
 

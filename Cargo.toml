@@ -9,7 +9,7 @@ repository = "https://github.com/jmgao/progpool"
 license = "Apache-2.0"
 
 [dependencies]
-futures = { version = "0.3", features = ["thread-pool"] }
 indicatif = "0.16.2"
+rayon = "^1.10.0"
 
 tracing = "^0.1.40"

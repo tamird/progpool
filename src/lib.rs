@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -20,7 +19,7 @@ fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
 struct TaskMonitorId((Instant, String, usize));
 
 struct TaskMonitor {
-    counter: AtomicUsize,
+    counter: usize,
     tasks: BTreeSet<TaskMonitorId>,
     progress_bar: Arc<indicatif::ProgressBar>,
 }
@@ -28,7 +27,7 @@ struct TaskMonitor {
 impl TaskMonitor {
     fn new(progress_bar: Arc<indicatif::ProgressBar>) -> TaskMonitor {
         TaskMonitor {
-            counter: AtomicUsize::new(0),
+            counter: 0,
             tasks: BTreeSet::new(),
             progress_bar,
         }
@@ -36,8 +35,8 @@ impl TaskMonitor {
 
     fn started(&mut self, task_name: String) -> TaskMonitorId {
         let now = Instant::now();
-        let counter = self.counter.fetch_add(1, Ordering::Relaxed);
-        let task_id = TaskMonitorId((now, task_name, counter));
+        let task_id = TaskMonitorId((now, task_name, self.counter));
+        self.counter += 1;
         self.tasks.insert(task_id.clone());
         self.update_progress_bar();
         task_id

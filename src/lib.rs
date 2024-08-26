@@ -145,7 +145,7 @@ impl Pool {
                     .spawn_with_handle(future::lazy(move |context| {
                         trace_scoped!(task.name.clone());
                         let task_id = task_monitor.lock().unwrap().started(task.name.clone());
-                        let result = (task.task)(&context);
+                        let result = (task.task)(context);
                         task_monitor.lock().unwrap().finished(task_id);
                         (task.name, result)
                     }))
@@ -210,6 +210,7 @@ impl<T: Send, E: Send> Job<T, E> {
 
 struct Task<T: Send, E: Send> {
     name: String,
+    #[allow(clippy::type_complexity)]
     task: Box<dyn FnOnce(&futures::task::Context) -> Result<T, E> + Send>,
 }
 

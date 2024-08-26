@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::convert::TryInto as _;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
     let task_count_digits = task_count.to_string().len();
@@ -10,8 +10,8 @@ fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
         "[{{elapsed_precise}}] {{prefix}} {} {{bar:40.cyan/blue}}: {{msg}}",
         count
     );
-    indicatif::ProgressStyle::default_bar()
-        .template(&template)
+    indicatif::ProgressStyle::with_template(&template)
+        .unwrap()
         .progress_chars("##-")
 }
 
@@ -122,7 +122,7 @@ impl Pool {
             let pb = indicatif::ProgressBar::new(task_count.try_into().unwrap());
             pb.set_style(progress_bar_style(task_count));
             pb.set_prefix(job.name.clone());
-            pb.enable_steady_tick(1000);
+            pb.enable_steady_tick(Duration::from_secs(1));
             pb
         });
 

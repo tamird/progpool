@@ -5,9 +5,11 @@ use std::time::Instant;
 
 fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
     let task_count_digits = task_count.to_string().len();
-    let count = "{pos:>".to_owned() + &(8 - task_count_digits).to_string() + "}/{len}";
-    let template =
-        "[{elapsed_precise}] {prefix} ".to_owned() + &count + " {bar:40.cyan/blue}: {msg}";
+    let count = format!("{{pos:>{}}}/{{len}}", 8 - task_count_digits);
+    let template = format!(
+        "[{{elapsed_precise}}] {{prefix}} {} {{bar:40.cyan/blue}}: {{msg}}",
+        count
+    );
     indicatif::ProgressStyle::default_bar()
         .template(&template)
         .progress_chars("##-")

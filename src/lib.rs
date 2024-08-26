@@ -174,20 +174,20 @@ impl Pool {
     }
 }
 
-pub struct Job<T: Send, E: Send> {
+pub struct Job<'task, T: Send, E: Send> {
     name: String,
-    tasks: Vec<Task<T, E>>,
+    tasks: Vec<Task<'task, T, E>>,
 }
 
-impl<T: Send, E: Send> Job<T, E> {
-    pub fn with_name<N: Into<String>>(name: N) -> Job<T, E> {
+impl<'task, T: Send, E: Send> Job<'task, T, E> {
+    pub fn with_name<N: Into<String>>(name: N) -> Self {
         Job {
             name: name.into(),
             tasks: Vec::new(),
         }
     }
 
-    pub fn add_task<N: Into<String>, F: FnOnce() -> Result<T, E> + Send + 'static>(
+    pub fn add_task<N: Into<String>, F: FnOnce() -> Result<T, E> + Send + 'task>(
         &mut self,
         name: N,
         task: F,
@@ -200,9 +200,9 @@ impl<T: Send, E: Send> Job<T, E> {
     }
 }
 
-struct Task<T: Send, E: Send> {
+struct Task<'task, T: Send, E: Send> {
     name: String,
-    task: Box<dyn FnOnce() -> Result<T, E> + Send>,
+    task: Box<dyn FnOnce() -> Result<T, E> + Send + 'task>,
 }
 
 #[cfg(test)]

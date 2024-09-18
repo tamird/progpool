@@ -1,63 +1,60 @@
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::convert::TryInto as _;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
-    let task_count_digits = task_count.to_string().len();
-    let count = format!("{{pos:>{}}}/{{len}}", 8 - task_count_digits);
+    let task_count_digits = task_count.checked_ilog10().unwrap_or(0) + 1;
     let template = format!(
-        "[{{elapsed_precise}}] {{prefix}} {} {{bar:40.cyan/blue}}: {{msg}}",
-        count
+        "[{{elapsed_precise}}] {{prefix}} {{pos:>{}}}/{{len}} {{bar:40.cyan/blue}}: {{msg}}",
+        8 - task_count_digits
     );
     indicatif::ProgressStyle::with_template(&template)
         .unwrap()
         .progress_chars("##-")
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
-struct TaskMonitorId((Instant, String, usize));
-
-struct TaskMonitor {
-    counter: usize,
-    tasks: BTreeSet<TaskMonitorId>,
+struct TaskMonitor<'task> {
+    tasks: BTreeMap<usize, Cow<'task, str>>,
     progress_bar: indicatif::ProgressBar,
 }
 
-impl TaskMonitor {
-    fn new(progress_bar: indicatif::ProgressBar) -> TaskMonitor {
+impl<'task> TaskMonitor<'task> {
+    fn new(progress_bar: indicatif::ProgressBar) -> Self {
         TaskMonitor {
-            counter: 0,
-            tasks: BTreeSet::new(),
+            tasks: Default::default(),
             progress_bar,
         }
     }
 
-    fn started(&mut self, task_name: String) -> TaskMonitorId {
-        let now = Instant::now();
-        let task_id = TaskMonitorId((now, task_name, self.counter));
-        self.counter += 1;
-        self.tasks.insert(task_id.clone());
+    fn started(&mut self, task_name: Cow<'task, str>) -> usize {
+        let task_id = self
+            .tasks
+            .last_key_value()
+            .map(|(task_id, _)| *task_id + 1)
+            .unwrap_or_default();
+        assert_eq!(self.tasks.insert(task_id, task_name), None);
         self.update_progress_bar();
         task_id
     }
 
-    fn finished(&mut self, task_id: TaskMonitorId) {
-        let removed = self.tasks.remove(&task_id);
-        assert!(removed);
+    fn finished(&mut self, task_id: usize) -> Cow<'task, str> {
+        let task_name = self.tasks.remove(&task_id).unwrap();
         self.progress_bar.inc(1);
         self.update_progress_bar();
+        task_name
     }
 
     fn update_progress_bar(&mut self) {
-        match self.tasks.iter().next() {
-            Some(task) => {
-                self.progress_bar.set_message((task.0).1.clone());
-            }
-
-            None => {
-                self.progress_bar.set_message("");
-            }
+        let msg = self
+            .tasks
+            .iter()
+            .next()
+            .map(|(_, task_name)| task_name.to_string());
+        match msg {
+            Some(msg) => self.progress_bar.set_message(msg),
+            None => self.progress_bar.set_message(""),
         }
     }
 }
@@ -68,14 +65,14 @@ pub struct Pool {
     quiet: bool,
 }
 
-pub struct ExecutionResult<T> {
-    pub name: String,
+pub struct ExecutionResult<'task, T> {
+    pub name: Cow<'task, str>,
     pub result: T,
 }
 
-pub struct ExecutionResults<T, E> {
-    pub successful: Vec<ExecutionResult<T>>,
-    pub failed: Vec<ExecutionResult<E>>,
+pub struct ExecutionResults<'task, T, E> {
+    pub successful: Vec<ExecutionResult<'task, T>>,
+    pub failed: Vec<ExecutionResult<'task, E>>,
 }
 
 impl Pool {
@@ -114,51 +111,56 @@ impl Pool {
         })
     }
 
-    pub fn execute<T: Send, E: Send>(&mut self, mut job: Job<T, E>) -> ExecutionResults<T, E> {
+    pub fn execute<'task, T: Send, E: Send>(
+        &mut self,
+        mut job: Job<'task, T, E>,
+    ) -> ExecutionResults<'task, T, E> {
         let mut task_monitor = TaskMonitor::new(if self.quiet {
             indicatif::ProgressBar::hidden()
         } else {
             let task_count = job.tasks.len();
             let pb = indicatif::ProgressBar::new(task_count.try_into().unwrap());
             pb.set_style(progress_bar_style(task_count));
-            pb.set_prefix(job.name.clone());
+            pb.set_prefix(job.name.to_string());
             pb.enable_steady_tick(Duration::from_secs(1));
             pb
         });
 
-        tracing::span!(tracing::Level::INFO, "Pool::execute", name = job.name).in_scope(|| {
+        tracing::span!(
+            tracing::Level::INFO,
+            "Pool::execute",
+            name = job.name.as_ref(),
+        )
+        .in_scope(|| {
             let mut successful = Vec::new();
             let mut failed = Vec::new();
             {
                 let state = Mutex::new((&mut task_monitor, &mut successful, &mut failed));
                 self.thread_pool().scope(|scope| {
-                    for task in job.tasks.drain(..) {
-                        scope.spawn(|_| {
-                            tracing::span!(tracing::Level::INFO, "Task::task", name = task.name)
+                    let state = &state;
+                    for Task { name, task } in job.tasks.drain(..) {
+                        scope.spawn(move |_| {
+                            tracing::span!(tracing::Level::INFO, "Task::task", name = name.as_ref())
                                 .in_scope(|| {
                                     let task_id = {
                                         let mut guard = state.lock().unwrap();
                                         let (task_monitor, _, _) = &mut *guard;
-                                        task_monitor.started(task.name.clone())
+                                        task_monitor.started(name)
                                     };
 
-                                    let result = (task.task)();
+                                    let result = (task)();
 
                                     let mut guard = state.lock().unwrap();
                                     let (task_monitor, successful, failed) = &mut *guard;
-                                    task_monitor.finished(task_id);
+                                    let name = task_monitor.finished(task_id);
                                     match result {
-                                        Ok(result) => {
-                                            successful.push(ExecutionResult {
-                                                name: task.name,
-                                                result,
-                                            });
+                                        Ok(ok) => {
+                                            successful.push(ExecutionResult { name, result: ok });
                                         }
 
-                                        Err(err) => failed.push(ExecutionResult {
-                                            name: task.name,
-                                            result: err,
-                                        }),
+                                        Err(err) => {
+                                            failed.push(ExecutionResult { name, result: err })
+                                        }
                                     }
                                 })
                         })
@@ -173,33 +175,32 @@ impl Pool {
 }
 
 pub struct Job<'task, T: Send, E: Send> {
-    name: String,
+    name: Cow<'task, str>,
     tasks: Vec<Task<'task, T, E>>,
 }
 
 impl<'task, T: Send, E: Send> Job<'task, T, E> {
-    pub fn with_name<N: Into<String>>(name: N) -> Self {
+    pub fn with_name(name: impl Into<Cow<'task, str>>) -> Self {
         Job {
             name: name.into(),
             tasks: Vec::new(),
         }
     }
 
-    pub fn add_task<N: Into<String>, F: FnOnce() -> Result<T, E> + Send + 'task>(
+    pub fn add_task<F: FnOnce() -> Result<T, E> + Send + 'task>(
         &mut self,
-        name: N,
+        name: impl Into<Cow<'task, str>>,
         task: F,
     ) {
-        let name = name.into();
         self.tasks.push(Task {
-            name,
+            name: name.into(),
             task: Box::new(task),
         });
     }
 }
 
 struct Task<'task, T: Send, E: Send> {
-    name: String,
+    name: Cow<'task, str>,
     task: Box<dyn FnOnce() -> Result<T, E> + Send + 'task>,
 }
 

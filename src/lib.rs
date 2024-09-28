@@ -236,17 +236,21 @@ mod tests {
 
         // Dispatch order is not guaranteed, must schedule all at once to avoid deadlock.
         let mut pool = Pool::with_size(job.tasks.len());
-        let results = pool.execute(job);
+        let ExecutionResults { successful, failed } = pool.execute(job);
 
-        assert_eq!(results.successful.len(), 2);
-        assert_eq!(results.successful[0].name, "first");
-        assert_eq!(results.successful[0].result, 0);
+        // `ExecutionResult` isn't PartialEq so can't be used with `assert_eq!`. Convert to a tuple.
+        let mut successful = successful
+            .iter()
+            .map(|ExecutionResult { name, result }| -> (&str, usize) { (&*name, *result) })
+            .collect::<Vec<_>>();
+        successful.sort();
+        let mut failed = failed
+            .iter()
+            .map(|ExecutionResult { name, result }| -> (&str, &str) { (&*name, &*result) })
+            .collect::<Vec<_>>();
+        failed.sort();
 
-        assert_eq!(results.successful[1].name, "second");
-        assert_eq!(results.successful[1].result, 1);
-
-        assert_eq!(results.failed.len(), 1);
-        assert_eq!(results.failed[0].name, "third");
-        assert_eq!(format!("{}", results.failed[0].result), format!("{}", 3));
+        assert_eq!(successful.as_slice(), &[("first", 0), ("second", 1)]);
+        assert_eq!(failed.as_slice(), &[("third", "3")]);
     }
 }
